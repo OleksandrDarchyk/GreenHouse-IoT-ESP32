@@ -11,7 +11,31 @@
 
 Adafruit_BME280 bme;
 
-void connectWiFi() {
+bool sensorReady = false;
+unsigned long lastSensorRead = 0;
+unsigned long lastReconnectAttempt = 0;
+
+void onWiFiEvent(WiFiEvent_t event) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            Serial.println("WiFi connected to access point");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.print("Got IP address: ");
+            Serial.println(WiFi.localIP());
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            Serial.println("WiFi disconnected");
+            break;
+
+        default:
+            break;
+    }
+}
+
+bool connectWiFi() {
     Serial.print("Connecting to WiFi: ");
     Serial.println(WIFI_SSID);
 
@@ -20,7 +44,7 @@ void connectWiFi() {
 
     int attempts = 0;
 
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
         delay(500);
         Serial.print(".");
         attempts++;
@@ -29,12 +53,12 @@ void connectWiFi() {
     Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("WiFi connected!");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println("WiFi connection failed!");
+        Serial.println("Connection successful!");
+        return true;
     }
+
+    Serial.println("WiFi connection failed!");
+    return false;
 }
 
 bool initSensor() {
@@ -46,17 +70,23 @@ bool initSensor() {
         return false;
     }
 
+    Serial.println("Sensor initialized successfully!");
     return true;
 }
 
 void readSensor() {
+    if (!sensorReady) {
+        Serial.println("Sensor not connected. Skipping BME280 readings.");
+        return;
+    }
+
     float temperature = bme.readTemperature();
     float humidity = bme.readHumidity();
     float pressure = bme.readPressure() / 100.0;
     float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
     Serial.println();
-    Serial.println("BME280/BMP280 readings");
+    Serial.println("BME280 readings");
     Serial.println("----------------------");
 
     Serial.print("Temperature: ");
@@ -79,6 +109,21 @@ void readSensor() {
     Serial.println(WiFi.status() == WL_CONNECTED ? "connected" : "disconnected");
 }
 
+void reconnectWiFiIfNeeded() {
+    if (WiFi.status() == WL_CONNECTED) {
+        return;
+    }
+
+    unsigned long now = millis();
+
+    if (now - lastReconnectAttempt >= 5000) {
+        lastReconnectAttempt = now;
+
+        Serial.println("Reconnecting to WiFi...");
+        WiFi.reconnect();
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -99,18 +144,19 @@ void setup() {
     Serial.print("I2C address: 0x");
     Serial.println(BME280_ADDRESS, HEX);
 
+    WiFi.onEvent(onWiFiEvent);
     connectWiFi();
 
-    if (!initSensor()) {
-        while (true) {
-            delay(1000);
-        }
-    }
-
-    Serial.println("Sensor initialized successfully!");
+    sensorReady = initSensor();
 }
 
 void loop() {
-    readSensor();
-    delay(5000);
+    reconnectWiFiIfNeeded();
+
+    unsigned long now = millis();
+
+    if (now - lastSensorRead >= 5000) {
+        lastSensorRead = now;
+        readSensor();
+    }
 }
