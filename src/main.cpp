@@ -1,18 +1,18 @@
 #include <Arduino.h>
 
-// put function declarations here:
-int myFunction(int, int);
-
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+    Serial.begin(115200);
+    delay(1000);
+
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println("GreenHouse IoT Firmware started");
+    Serial.println("Board: FireBeetle 2 ESP32-E");
+    Serial.println("Serial Monitor works");
+    Serial.println("=================================");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+    Serial.println("ESP32 is running...");
+    delay(2000);
 }
