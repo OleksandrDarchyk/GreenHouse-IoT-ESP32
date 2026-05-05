@@ -124,6 +124,15 @@ void reconnectWiFiIfNeeded() {
     }
 }
 
+void toggleRelay() {
+    relayState = !relayState;
+
+    digitalWrite(WATER_PUMP_RELAY_PIN, relayState ? HIGH : LOW);
+
+    Serial.print("Relay state: ");
+    Serial.println(relayState ? "ON" : "OFF");
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
