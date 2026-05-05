@@ -1,62 +1,100 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include "config.h"
 
-unsigned long lastDebugPrint = 0;
+void identifyDevice(int address) {
+    switch (address) {
+        case 0x27:
+        case 0x3F:
+            Serial.print("LCD I2C backpack, often PCF8574");
+            break;
 
-void printStartupInfo() {
+        case 0x3C:
+        case 0x3D:
+            Serial.print("OLED display, often SSD1306");
+            break;
+
+        case 0x76:
+        case 0x77:
+            Serial.print("BME280/BMP280 temperature sensor");
+            break;
+
+        case 0x68:
+            Serial.print("RTC DS3231 or MPU6050");
+            break;
+
+        default:
+            Serial.print("Unknown I2C device");
+            break;
+    }
+}
+
+void scanI2CBus() {
     Serial.println();
-    Serial.println("=================================");
-    Serial.println("GreenHouse IoT Firmware");
-    Serial.println("Board: FireBeetle 2 ESP32-E");
-    Serial.print("Device ID: ");
-    Serial.println(DEVICE_ID);
-    Serial.println("=================================");
+    Serial.println("Scanning I2C bus...");
+    Serial.println("====================");
 
-    Serial.println("Configured pins:");
-    Serial.print("Onboard LED: GPIO ");
-    Serial.println(ONBOARD_LED_PIN);
+    int devicesFound = 0;
 
-    Serial.print("I2C SDA: GPIO ");
-    Serial.println(I2C_SDA_PIN);
+    for (int address = 1; address < 127; address++) {
+        Wire.beginTransmission(address);
+        byte error = Wire.endTransmission();
 
-    Serial.print("I2C SCL: GPIO ");
-    Serial.println(I2C_SCL_PIN);
+        if (error == 0) {
+            Serial.print("Found device at 0x");
 
-    Serial.print("Soil moisture sensor: GPIO ");
-    Serial.println(SOIL_MOISTURE_PIN);
+            if (address < 16) {
+                Serial.print("0");
+            }
 
-    Serial.print("LDR sensor: GPIO ");
-    Serial.println(LDR_PIN);
+            Serial.print(address, HEX);
+            Serial.print(" - ");
+            identifyDevice(address);
+            Serial.println();
 
-    Serial.print("MQ-135 sensor: GPIO ");
-    Serial.println(MQ135_PIN);
+            devicesFound++;
+        }
+    }
 
-    Serial.print("Water pump relay: GPIO ");
-    Serial.println(WATER_PUMP_RELAY_PIN);
+    Serial.println();
 
-    Serial.print("Fan relay: GPIO ");
-    Serial.println(FAN_RELAY_PIN);
+    if (devicesFound == 0) {
+        Serial.println("No I2C devices found.");
+        Serial.println("Check wiring: 3V3, GND, SDA, SCL.");
+    } else {
+        Serial.print("Found ");
+        Serial.print(devicesFound);
+        Serial.println(" I2C device(s).");
+    }
 
-    Serial.println("=================================");
+    Serial.println("====================");
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    pinMode(ONBOARD_LED_PIN, OUTPUT);
+    Serial.println();
+    Serial.println("=================================");
+    Serial.println("GreenHouse IoT Firmware");
+    Serial.println("I2C Scanner");
+    Serial.println("Board: FireBeetle 2 ESP32-E");
+    Serial.print("Device ID: ");
+    Serial.println(DEVICE_ID);
+    Serial.println("=================================");
 
-    printStartupInfo();
+    Serial.print("Using SDA: GPIO ");
+    Serial.println(I2C_SDA_PIN);
+
+    Serial.print("Using SCL: GPIO ");
+    Serial.println(I2C_SCL_PIN);
+
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+
+    scanI2CBus();
 }
 
 void loop() {
-    unsigned long now = millis();
-
-    if (now - lastDebugPrint >= DEBUG_PRINT_INTERVAL_MS) {
-        lastDebugPrint = now;
-
-        Serial.println("ESP32 is running...");
-
-        digitalWrite(ONBOARD_LED_PIN, !digitalRead(ONBOARD_LED_PIN));
-    }
+    delay(5000);
+    scanI2CBus();
 }
