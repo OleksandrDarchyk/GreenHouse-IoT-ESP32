@@ -9,6 +9,11 @@
 
 Adafruit_BME280 bme;
 
+unsigned long lastSensorRead = 0;
+unsigned long lastRelayToggle = 0;
+
+bool relayState = false;
+
 bool initSensor() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
@@ -48,13 +53,22 @@ void readSensor() {
     Serial.println(" m");
 }
 
+void toggleRelay() {
+    relayState = !relayState;
+
+    digitalWrite(WATER_PUMP_RELAY_PIN, relayState ? HIGH : LOW);
+
+    Serial.print("Relay state: ");
+    Serial.println(relayState ? "ON" : "OFF");
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
     Serial.println();
-    Serial.println("BME280 Sensor Example");
-    Serial.println("=====================");
+    Serial.println("BME280 + Relay Test");
+    Serial.println("===================");
 
     Serial.print("SDA: GPIO ");
     Serial.println(I2C_SDA_PIN);
@@ -65,6 +79,12 @@ void setup() {
     Serial.print("I2C address: 0x");
     Serial.println(BME280_ADDRESS, HEX);
 
+    Serial.print("Relay pin: GPIO ");
+    Serial.println(WATER_PUMP_RELAY_PIN);
+
+    pinMode(WATER_PUMP_RELAY_PIN, OUTPUT);
+    digitalWrite(WATER_PUMP_RELAY_PIN, LOW);
+
     if (!initSensor()) {
         while (true) {
             delay(1000);
@@ -72,9 +92,19 @@ void setup() {
     }
 
     Serial.println("Sensor initialized successfully!");
+    Serial.println("Relay initialized successfully!");
 }
 
 void loop() {
-    readSensor();
-    delay(2000);
+    unsigned long now = millis();
+
+    if (now - lastSensorRead >= 2000) {
+        lastSensorRead = now;
+        readSensor();
+    }
+
+    if (now - lastRelayToggle >= 2000) {
+        lastRelayToggle = now;
+        toggleRelay();
+    }
 }
