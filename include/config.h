@@ -75,4 +75,19 @@ const unsigned long SENSOR_READ_INTERVAL_MS = 5000;
 // Print debug status every 2 seconds
 const unsigned long DEBUG_PRINT_INTERVAL_MS = 2000;
 
+// ======================================================
+// MQTT settings
+// ======================================================
+
+const char* MQTT_BROKER = "mqtt.flespi.io";
+const int MQTT_PORT = 1883;
+
+// ESP32 publishes sensor data here
+const char* MQTT_TOPIC_SENSOR_DATA = "greenhouse/smart-greenhouse/esp32-01/sensor-data";
+
+// Future topics for commands/status
+const char* MQTT_TOPIC_DEVICE_STATUS = "greenhouse/smart-greenhouse/esp32-01/status";
+const char* MQTT_TOPIC_PUMP_COMMAND = "greenhouse/smart-greenhouse/esp32-01/commands/pump";
+const char* MQTT_TOPIC_FAN_COMMAND = "greenhouse/smart-greenhouse/esp32-01/commands/fan";
+
 #endif
