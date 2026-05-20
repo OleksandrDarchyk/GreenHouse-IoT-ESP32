@@ -61,12 +61,15 @@ const int FAN_RELAY_PIN = 25;
 // HIGH = relay OFF
 const bool FAN_RELAY_ACTIVE_LOW = true;
 
-// false = fan controlled only by MQTT command
-// true  = fan can also be controlled automatically by temperature
-const bool FAN_AUTO_MODE_ENABLED = false;
+// Default automatic control settings.
+// Frontend can change threshold later through MQTT command.
+const float DEFAULT_FAN_THRESHOLD_C = 27.0;
 
-const float FAN_ON_TEMPERATURE_C = 28.0;
-const float FAN_OFF_TEMPERATURE_C = 26.0;
+// Difference between ON and OFF temperature.
+// Example: threshold 27°C:
+// fan ON at 27°C
+// fan OFF at 26°C
+const float FAN_HYSTERESIS_C = 1.0;
 
 // ======================================================
 // Timing

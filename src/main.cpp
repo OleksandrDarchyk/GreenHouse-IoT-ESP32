@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <ArduinoJson.h>
 #include "config.h"
 #include "secrets.h"
 
@@ -11,12 +12,14 @@
 #define SEALEVELPRESSURE_HPA 1013.25
 
 Adafruit_BME280 bme;
-
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool sensorReady = false;
 bool fanIsOn = false;
+bool fanAutoMode = false;
+
+float fanThreshold = DEFAULT_FAN_THRESHOLD_C;
 
 unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
@@ -44,6 +47,22 @@ void setupFan() {
     setFan(false);
 }
 
+void updateFanAutomatic(float temperature) {
+    if (!fanAutoMode) {
+        return;
+    }
+
+    if (!fanIsOn && temperature >= fanThreshold) {
+        Serial.println("Auto fan: temperature is high. Turning fan ON.");
+        setFan(true);
+    }
+
+    if (fanIsOn && temperature <= fanThreshold - FAN_HYSTERESIS_C) {
+        Serial.println("Auto fan: temperature is low enough. Turning fan OFF.");
+        setFan(false);
+    }
+}
+
 // ======================================================
 // MQTT command handler
 // ======================================================
@@ -55,6 +74,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         message += (char)payload[i];
     }
 
+    message.trim();
+
     Serial.println();
     Serial.print("MQTT command topic: ");
     Serial.println(topic);
@@ -62,17 +83,66 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.print("MQTT command payload: ");
     Serial.println(message);
 
-    if (String(topic) == MQTT_TOPIC_FAN_COMMAND) {
-        message.toLowerCase();
-
-        if (message.indexOf("on") >= 0) {
-            setFan(true);
-        } else if (message.indexOf("off") >= 0) {
-            setFan(false);
-        } else {
-            Serial.println("Unknown fan command. Use: on / off");
-        }
+    if (String(topic) != MQTT_TOPIC_FAN_COMMAND) {
+        return;
     }
+
+    // Manual simple commands: on / off
+    if (message == "on") {
+        fanAutoMode = false;
+        setFan(true);
+        Serial.println("Fan mode: MANUAL");
+        return;
+    }
+
+    if (message == "off") {
+        fanAutoMode = false;
+        setFan(false);
+        Serial.println("Fan mode: MANUAL");
+        return;
+    }
+
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, message);
+
+    if (error) {
+        Serial.print("JSON parse failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    const char* mode = doc["mode"] | "";
+
+    if (strcmp(mode, "auto") == 0) {
+        fanAutoMode = true;
+        fanThreshold = doc["threshold"] | fanThreshold;
+
+        Serial.print("Fan mode: AUTO. Threshold: ");
+        Serial.println(fanThreshold);
+
+        if (sensorReady) {
+            updateFanAutomatic(bme.readTemperature());
+        }
+
+        return;
+    }
+
+    if (strcmp(mode, "manual") == 0) {
+        fanAutoMode = false;
+
+        const char* state = doc["state"] | "off";
+
+        if (strcmp(state, "on") == 0) {
+            setFan(true);
+        } else {
+            setFan(false);
+        }
+
+        Serial.println("Fan mode: MANUAL");
+        return;
+    }
+
+    Serial.println("Unknown fan command.");
 }
 
 // ======================================================
@@ -241,21 +311,25 @@ void publishSensorData() {
     float pressure = bme.readPressure() / 100.0;
     float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
-    char payload[320];
+    updateFanAutomatic(temperature);
+
+    char mqttPayload[420];
 
     snprintf(
-        payload,
-        sizeof(payload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"fanOn\":%s}",
+        mqttPayload,
+        sizeof(mqttPayload),
+        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f}",
         DEVICE_ID,
         temperature,
         humidity,
         pressure,
         altitude,
-        fanIsOn ? "true" : "false"
+        fanIsOn ? "true" : "false",
+        fanAutoMode ? "true" : "false",
+        fanThreshold
     );
 
-    bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, payload);
+    bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
 
     Serial.println();
     Serial.println("BME280 readings");
@@ -280,8 +354,15 @@ void publishSensorData() {
     Serial.print("Fan:         ");
     Serial.println(fanIsOn ? "ON" : "OFF");
 
+    Serial.print("Fan mode:    ");
+    Serial.println(fanAutoMode ? "AUTO" : "MANUAL");
+
+    Serial.print("Threshold:   ");
+    Serial.print(fanThreshold);
+    Serial.println(" °C");
+
     Serial.print("MQTT payload: ");
-    Serial.println(payload);
+    Serial.println(mqttPayload);
 
     Serial.print("Publish status: ");
     Serial.println(success ? "success" : "failed");
@@ -298,8 +379,8 @@ void setup() {
     setupFan();
 
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan Control");
-    Serial.println("============================================");
+    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan Auto Control");
+    Serial.println("=================================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
