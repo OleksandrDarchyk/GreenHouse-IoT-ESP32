@@ -21,6 +21,49 @@ unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 unsigned long lastMqttReconnectAttempt = 0;
 
+// ======================================================
+// Fan relay test
+// ======================================================
+
+// Most 5V relay modules are active LOW.
+// LOW  = relay ON
+// HIGH = relay OFF
+const bool FAN_RELAY_ACTIVE_LOW_LOCAL = true;
+
+unsigned long lastRelayToggle = 0;
+bool fanRelayState = false;
+
+void setFanRelay(bool turnOn) {
+    fanRelayState = turnOn;
+
+    if (FAN_RELAY_ACTIVE_LOW_LOCAL) {
+        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? LOW : HIGH);
+    } else {
+        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? HIGH : LOW);
+    }
+
+    Serial.print("Fan relay: ");
+    Serial.println(turnOn ? "ON" : "OFF");
+}
+
+void setupFanRelay() {
+    pinMode(WATER_PUMP_RELAY_PIN, OUTPUT);
+
+    // Start with relay OFF
+    setFanRelay(false);
+}
+
+void updateFanRelayTest() {
+    unsigned long now = millis();
+
+    if (now - lastRelayToggle >= 3000) {
+        lastRelayToggle = now;
+
+        fanRelayState = !fanRelayState;
+        setFanRelay(fanRelayState);
+    }
+}
+
 // ==========================
 // WiFi events
 // ==========================
@@ -233,9 +276,11 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
 
+    setupFanRelay();
+
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + WiFi + MQTT");
-    Serial.println("=====================================");
+    Serial.println("GreenHouse IoT - BME280 + WiFi + MQTT + Relay test");
+    Serial.println("===================================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
@@ -245,6 +290,9 @@ void setup() {
 
     Serial.print("SCL: GPIO ");
     Serial.println(I2C_SCL_PIN);
+
+    Serial.print("Relay pin: GPIO ");
+    Serial.println(WATER_PUMP_RELAY_PIN);
 
     Serial.print("I2C address: 0x");
     Serial.println(BME280_ADDRESS, HEX);
@@ -274,9 +322,11 @@ void loop() {
 
     mqttClient.loop();
 
+    updateFanRelayTest();
+
     unsigned long now = millis();
 
-    if (now - lastSensorRead >= 5000) {
+    if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
         lastSensorRead = now;
         publishSensorData();
     }

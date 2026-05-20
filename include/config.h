@@ -66,6 +66,18 @@ const int WATER_PUMP_RELAY_PIN = 25;
 const int FAN_RELAY_PIN = 26;
 
 // ======================================================
+// Fan relay settings
+// ======================================================
+
+// Most 5V relay modules are active LOW.
+// LOW  = relay ON
+// HIGH = relay OFF
+const bool FAN_RELAY_ACTIVE_LOW = true;
+
+// Only for checking that the relay clicks at startup
+const unsigned long FAN_RELAY_TEST_DELAY_MS = 2000;
+
+// ======================================================
 // Timing
 // ======================================================
 
