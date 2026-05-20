@@ -16,57 +16,68 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool sensorReady = false;
+bool fanIsOn = false;
 
 unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 unsigned long lastMqttReconnectAttempt = 0;
 
 // ======================================================
-// Fan relay test
+// Fan relay control
 // ======================================================
 
-// Most 5V relay modules are active LOW.
-// LOW  = relay ON
-// HIGH = relay OFF
-const bool FAN_RELAY_ACTIVE_LOW_LOCAL = true;
+void setFan(bool turnOn) {
+    fanIsOn = turnOn;
 
-unsigned long lastRelayToggle = 0;
-bool fanRelayState = false;
-
-void setFanRelay(bool turnOn) {
-    fanRelayState = turnOn;
-
-    if (FAN_RELAY_ACTIVE_LOW_LOCAL) {
-        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? LOW : HIGH);
+    if (FAN_RELAY_ACTIVE_LOW) {
+        digitalWrite(FAN_RELAY_PIN, turnOn ? LOW : HIGH);
     } else {
-        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? HIGH : LOW);
+        digitalWrite(FAN_RELAY_PIN, turnOn ? HIGH : LOW);
     }
 
-    Serial.print("Fan relay: ");
-    Serial.println(turnOn ? "ON" : "OFF");
+    Serial.print("Fan: ");
+    Serial.println(fanIsOn ? "ON" : "OFF");
 }
 
-void setupFanRelay() {
-    pinMode(WATER_PUMP_RELAY_PIN, OUTPUT);
-
-    // Start with relay OFF
-    setFanRelay(false);
+void setupFan() {
+    pinMode(FAN_RELAY_PIN, OUTPUT);
+    setFan(false);
 }
 
-void updateFanRelayTest() {
-    unsigned long now = millis();
+// ======================================================
+// MQTT command handler
+// ======================================================
 
-    if (now - lastRelayToggle >= 3000) {
-        lastRelayToggle = now;
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    String message = "";
 
-        fanRelayState = !fanRelayState;
-        setFanRelay(fanRelayState);
+    for (unsigned int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    Serial.println();
+    Serial.print("MQTT command topic: ");
+    Serial.println(topic);
+
+    Serial.print("MQTT command payload: ");
+    Serial.println(message);
+
+    if (String(topic) == MQTT_TOPIC_FAN_COMMAND) {
+        message.toLowerCase();
+
+        if (message.indexOf("on") >= 0) {
+            setFan(true);
+        } else if (message.indexOf("off") >= 0) {
+            setFan(false);
+        } else {
+            Serial.println("Unknown fan command. Use: on / off");
+        }
     }
 }
 
-// ==========================
+// ======================================================
 // WiFi events
-// ==========================
+// ======================================================
 
 void onWiFiEvent(WiFiEvent_t event) {
     switch (event) {
@@ -88,9 +99,9 @@ void onWiFiEvent(WiFiEvent_t event) {
     }
 }
 
-// ==========================
+// ======================================================
 // WiFi connection
-// ==========================
+// ======================================================
 
 bool connectWiFi() {
     Serial.print("Connecting to WiFi: ");
@@ -132,9 +143,9 @@ void reconnectWiFiIfNeeded() {
     }
 }
 
-// ==========================
+// ======================================================
 // MQTT connection
-// ==========================
+// ======================================================
 
 bool connectMQTT() {
     if (mqttClient.connected()) {
@@ -160,11 +171,18 @@ bool connectMQTT() {
 
     if (connected) {
         Serial.println("MQTT connected!");
+
+        mqttClient.subscribe(MQTT_TOPIC_FAN_COMMAND);
+
+        Serial.print("Subscribed to fan command topic: ");
+        Serial.println(MQTT_TOPIC_FAN_COMMAND);
+
         return true;
     }
 
     Serial.print("MQTT connection failed. State: ");
     Serial.println(mqttClient.state());
+
     return false;
 }
 
@@ -181,9 +199,9 @@ void reconnectMQTTIfNeeded() {
     }
 }
 
-// ==========================
+// ======================================================
 // BME280 sensor
-// ==========================
+// ======================================================
 
 bool initSensor() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
@@ -198,9 +216,9 @@ bool initSensor() {
     return true;
 }
 
-// ==========================
-// Read + publish sensor data
-// ==========================
+// ======================================================
+// Publish sensor data
+// ======================================================
 
 void publishSensorData() {
     if (!sensorReady) {
@@ -223,17 +241,18 @@ void publishSensorData() {
     float pressure = bme.readPressure() / 100.0;
     float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
-    char payload[256];
+    char payload[320];
 
     snprintf(
         payload,
         sizeof(payload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f}",
+        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"fanOn\":%s}",
         DEVICE_ID,
         temperature,
         humidity,
         pressure,
-        altitude
+        altitude,
+        fanIsOn ? "true" : "false"
     );
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, payload);
@@ -258,8 +277,8 @@ void publishSensorData() {
     Serial.print(altitude);
     Serial.println(" m");
 
-    Serial.print("MQTT topic:  ");
-    Serial.println(MQTT_TOPIC_SENSOR_DATA);
+    Serial.print("Fan:         ");
+    Serial.println(fanIsOn ? "ON" : "OFF");
 
     Serial.print("MQTT payload: ");
     Serial.println(payload);
@@ -268,61 +287,46 @@ void publishSensorData() {
     Serial.println(success ? "success" : "failed");
 }
 
-// ==========================
+// ======================================================
 // Setup
-// ==========================
+// ======================================================
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    setupFanRelay();
+    setupFan();
 
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + WiFi + MQTT + Relay test");
-    Serial.println("===================================================");
+    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan Control");
+    Serial.println("============================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
 
-    Serial.print("SDA: GPIO ");
-    Serial.println(I2C_SDA_PIN);
-
-    Serial.print("SCL: GPIO ");
-    Serial.println(I2C_SCL_PIN);
-
-    Serial.print("Relay pin: GPIO ");
-    Serial.println(WATER_PUMP_RELAY_PIN);
-
-    Serial.print("I2C address: 0x");
-    Serial.println(BME280_ADDRESS, HEX);
-
-    Serial.print("MQTT broker: ");
-    Serial.println(MQTT_BROKER);
-
-    Serial.print("MQTT topic: ");
-    Serial.println(MQTT_TOPIC_SENSOR_DATA);
+    Serial.print("Fan relay pin: GPIO ");
+    Serial.println(FAN_RELAY_PIN);
 
     WiFi.onEvent(onWiFiEvent);
     connectWiFi();
 
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setCallback(mqttCallback);
+
     connectMQTT();
 
     sensorReady = initSensor();
 }
 
-// ==========================
+// ======================================================
 // Loop
-// ==========================
+// ======================================================
 
 void loop() {
     reconnectWiFiIfNeeded();
     reconnectMQTTIfNeeded();
 
     mqttClient.loop();
-
-    updateFanRelayTest();
 
     unsigned long now = millis();
 
