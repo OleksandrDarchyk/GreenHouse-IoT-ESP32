@@ -44,6 +44,15 @@ const int LDR_PIN = 35;
 const int MQ135_PIN = 36;
 
 // ======================================================
+// Soil moisture calibration
+// These values must be adjusted after testing your sensor.
+// Usually: higher value = dry, lower value = wet.
+// ======================================================
+
+const int SOIL_DRY_VALUE = 3000;
+const int SOIL_WET_VALUE = 1400;
+
+// ======================================================
 // Digital output pins
 // Used for actuators through relay module or MOSFET.
 // Never connect pump or fan directly to ESP32 GPIO.
@@ -93,10 +102,11 @@ const char* MQTT_TOPIC_SENSOR_DATA =
 const char* MQTT_TOPIC_DEVICE_STATUS =
     "greenhouse/smart-greenhouse/esp32-01/status";
 
-// Backend / Flespi sends commands to ESP32 here
+// Backend / Flespi sends pump commands to ESP32 here
 const char* MQTT_TOPIC_PUMP_COMMAND =
     "greenhouse/smart-greenhouse/esp32-01/commands/pump";
 
+// Backend / Flespi sends fan commands to ESP32 here
 const char* MQTT_TOPIC_FAN_COMMAND =
     "greenhouse/smart-greenhouse/esp32-01/commands/fan";
 

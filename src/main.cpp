@@ -24,6 +24,7 @@ float fanThreshold = DEFAULT_FAN_THRESHOLD_C;
 unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 unsigned long lastMqttReconnectAttempt = 0;
+unsigned long lastDebugPrint = 0;
 
 // ======================================================
 // Fan relay control
@@ -61,6 +62,40 @@ void updateFanAutomatic(float temperature) {
         Serial.println("Auto fan: temperature is low enough. Turning fan OFF.");
         setFan(false);
     }
+}
+
+// ======================================================
+// Soil moisture sensor
+// ======================================================
+
+int readSoilMoistureRaw() {
+    return analogRead(SOIL_MOISTURE_PIN);
+}
+
+int convertSoilMoistureToPercent(int rawValue) {
+    long percentage = map(
+        rawValue,
+        SOIL_DRY_VALUE,
+        SOIL_WET_VALUE,
+        0,
+        100
+    );
+
+    percentage = constrain(percentage, 0L, 100L);
+
+    return (int)percentage;
+}
+
+void printSoilMoistureDebug() {
+    int soilRaw = readSoilMoistureRaw();
+    int soilPercent = convertSoilMoistureToPercent(soilRaw);
+
+    Serial.print("Soil raw: ");
+    Serial.print(soilRaw);
+
+    Serial.print(" | Soil moisture: ");
+    Serial.print(soilPercent);
+    Serial.println("%");
 }
 
 // ======================================================
@@ -311,19 +346,24 @@ void publishSensorData() {
     float pressure = bme.readPressure() / 100.0;
     float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
+    int soilRaw = readSoilMoistureRaw();
+    int soilPercent = convertSoilMoistureToPercent(soilRaw);
+
     updateFanAutomatic(temperature);
 
-    char mqttPayload[420];
+    char mqttPayload[600];
 
     snprintf(
         mqttPayload,
         sizeof(mqttPayload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f}",
+        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f}",
         DEVICE_ID,
         temperature,
         humidity,
         pressure,
         altitude,
+        soilRaw,
+        soilPercent,
         fanIsOn ? "true" : "false",
         fanAutoMode ? "true" : "false",
         fanThreshold
@@ -332,7 +372,7 @@ void publishSensorData() {
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
 
     Serial.println();
-    Serial.println("BME280 readings");
+    Serial.println("Sensor readings");
     Serial.println("----------------------");
 
     Serial.print("Temperature: ");
@@ -350,6 +390,13 @@ void publishSensorData() {
     Serial.print("Altitude:    ");
     Serial.print(altitude);
     Serial.println(" m");
+
+    Serial.print("Soil raw:    ");
+    Serial.println(soilRaw);
+
+    Serial.print("Soil:        ");
+    Serial.print(soilPercent);
+    Serial.println(" %");
 
     Serial.print("Fan:         ");
     Serial.println(fanIsOn ? "ON" : "OFF");
@@ -378,12 +425,21 @@ void setup() {
 
     setupFan();
 
+    pinMode(SOIL_MOISTURE_PIN, INPUT);
+
+    // ESP32 ADC is 12-bit by default, but this makes it explicit.
+    // analogRead() will return values from 0 to 4095.
+    analogReadResolution(12);
+
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan Auto Control");
-    Serial.println("=================================================");
+    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan + Soil Moisture");
+    Serial.println("====================================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
+
+    Serial.print("Soil moisture pin: GPIO ");
+    Serial.println(SOIL_MOISTURE_PIN);
 
     Serial.print("Fan relay pin: GPIO ");
     Serial.println(FAN_RELAY_PIN);
@@ -410,6 +466,11 @@ void loop() {
     mqttClient.loop();
 
     unsigned long now = millis();
+
+    if (now - lastDebugPrint >= DEBUG_PRINT_INTERVAL_MS) {
+        lastDebugPrint = now;
+        printSoilMoistureDebug();
+    }
 
     if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
         lastSensorRead = now;
