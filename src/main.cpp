@@ -16,10 +16,23 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool sensorReady = false;
+
+// Fan state
 bool fanIsOn = false;
 bool fanAutoMode = false;
-
 float fanThreshold = DEFAULT_FAN_THRESHOLD_C;
+
+// Pump state
+bool pumpIsOn = false;
+
+// Most relay modules are active LOW:
+// LOW  = relay ON
+// HIGH = relay OFF
+const bool PUMP_RELAY_ACTIVE_LOW = true;
+
+// Safety: pump automatically turns OFF after 3 seconds
+const unsigned long PUMP_MAX_ON_TIME_MS = 3000;
+unsigned long pumpTurnedOnAt = 0;
 
 unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
@@ -65,6 +78,45 @@ void updateFanAutomatic(float temperature) {
 }
 
 // ======================================================
+// Pump relay control
+// ======================================================
+
+void setPump(bool turnOn) {
+    pumpIsOn = turnOn;
+
+    if (PUMP_RELAY_ACTIVE_LOW) {
+        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? LOW : HIGH);
+    } else {
+        digitalWrite(WATER_PUMP_RELAY_PIN, turnOn ? HIGH : LOW);
+    }
+
+    if (turnOn) {
+        pumpTurnedOnAt = millis();
+    }
+
+    Serial.print("Pump: ");
+    Serial.println(pumpIsOn ? "ON" : "OFF");
+}
+
+void setupPump() {
+    pinMode(WATER_PUMP_RELAY_PIN, OUTPUT);
+    setPump(false);
+}
+
+void updatePumpSafetyTimer() {
+    if (!pumpIsOn) {
+        return;
+    }
+
+    unsigned long now = millis();
+
+    if (now - pumpTurnedOnAt >= PUMP_MAX_ON_TIME_MS) {
+        Serial.println("Pump safety timer: turning pump OFF.");
+        setPump(false);
+    }
+}
+
+// ======================================================
 // Soil moisture sensor
 // ======================================================
 
@@ -102,27 +154,7 @@ void printSoilMoistureDebug() {
 // MQTT command handler
 // ======================================================
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    String message = "";
-
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
-
-    message.trim();
-
-    Serial.println();
-    Serial.print("MQTT command topic: ");
-    Serial.println(topic);
-
-    Serial.print("MQTT command payload: ");
-    Serial.println(message);
-
-    if (String(topic) != MQTT_TOPIC_FAN_COMMAND) {
-        return;
-    }
-
-    // Manual simple commands: on / off
+void handleFanCommand(String message) {
     if (message == "on") {
         fanAutoMode = false;
         setFan(true);
@@ -137,11 +169,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         return;
     }
 
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
-        Serial.print("JSON parse failed: ");
+        Serial.print("Fan JSON parse failed: ");
         Serial.println(error.c_str());
         return;
     }
@@ -178,6 +210,70 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     }
 
     Serial.println("Unknown fan command.");
+}
+
+void handlePumpCommand(String message) {
+    if (message == "on") {
+        setPump(true);
+        return;
+    }
+
+    if (message == "off") {
+        setPump(false);
+        return;
+    }
+
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, message);
+
+    if (error) {
+        Serial.print("Pump JSON parse failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    const char* state = doc["state"] | "off";
+
+    if (strcmp(state, "on") == 0) {
+        setPump(true);
+        return;
+    }
+
+    if (strcmp(state, "off") == 0) {
+        setPump(false);
+        return;
+    }
+
+    Serial.println("Unknown pump command.");
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    String message = "";
+
+    for (unsigned int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    message.trim();
+
+    Serial.println();
+    Serial.print("MQTT command topic: ");
+    Serial.println(topic);
+
+    Serial.print("MQTT command payload: ");
+    Serial.println(message);
+
+    if (String(topic) == MQTT_TOPIC_FAN_COMMAND) {
+        handleFanCommand(message);
+        return;
+    }
+
+    if (String(topic) == MQTT_TOPIC_PUMP_COMMAND) {
+        handlePumpCommand(message);
+        return;
+    }
+
+    Serial.println("Unknown MQTT topic.");
 }
 
 // ======================================================
@@ -278,9 +374,13 @@ bool connectMQTT() {
         Serial.println("MQTT connected!");
 
         mqttClient.subscribe(MQTT_TOPIC_FAN_COMMAND);
+        mqttClient.subscribe(MQTT_TOPIC_PUMP_COMMAND);
 
         Serial.print("Subscribed to fan command topic: ");
         Serial.println(MQTT_TOPIC_FAN_COMMAND);
+
+        Serial.print("Subscribed to pump command topic: ");
+        Serial.println(MQTT_TOPIC_PUMP_COMMAND);
 
         return true;
     }
@@ -351,12 +451,12 @@ void publishSensorData() {
 
     updateFanAutomatic(temperature);
 
-    char mqttPayload[600];
+    char mqttPayload[700];
 
     snprintf(
         mqttPayload,
         sizeof(mqttPayload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f}",
+        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f,\"pumpOn\":%s}",
         DEVICE_ID,
         temperature,
         humidity,
@@ -366,7 +466,8 @@ void publishSensorData() {
         soilPercent,
         fanIsOn ? "true" : "false",
         fanAutoMode ? "true" : "false",
-        fanThreshold
+        fanThreshold,
+        pumpIsOn ? "true" : "false"
     );
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
@@ -408,6 +509,9 @@ void publishSensorData() {
     Serial.print(fanThreshold);
     Serial.println(" °C");
 
+    Serial.print("Pump:        ");
+    Serial.println(pumpIsOn ? "ON" : "OFF");
+
     Serial.print("MQTT payload: ");
     Serial.println(mqttPayload);
 
@@ -424,16 +528,16 @@ void setup() {
     delay(1000);
 
     setupFan();
+    setupPump();
 
     pinMode(SOIL_MOISTURE_PIN, INPUT);
 
-    // ESP32 ADC is 12-bit by default, but this makes it explicit.
-    // analogRead() will return values from 0 to 4095.
+    // ESP32 ADC is 12-bit: analogRead() returns 0-4095
     analogReadResolution(12);
 
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan + Soil Moisture");
-    Serial.println("====================================================");
+    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan + Pump + Soil Moisture");
+    Serial.println("============================================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
@@ -444,10 +548,14 @@ void setup() {
     Serial.print("Fan relay pin: GPIO ");
     Serial.println(FAN_RELAY_PIN);
 
+    Serial.print("Pump relay pin: GPIO ");
+    Serial.println(WATER_PUMP_RELAY_PIN);
+
     WiFi.onEvent(onWiFiEvent);
     connectWiFi();
 
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setBufferSize(700);
     mqttClient.setCallback(mqttCallback);
 
     connectMQTT();
@@ -464,6 +572,8 @@ void loop() {
     reconnectMQTTIfNeeded();
 
     mqttClient.loop();
+
+    updatePumpSafetyTimer();
 
     unsigned long now = millis();
 
