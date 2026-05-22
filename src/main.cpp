@@ -8,8 +8,8 @@
 #include "config.h"
 #include "secrets.h"
 
-#define BME280_ADDRESS 0x76
-#define SEALEVELPRESSURE_HPA 1013.25
+const uint8_t GREENHOUSE_BME280_ADDRESS = 0x76;
+const float SEALEVELPRESSURE_HPA = 1013.25;
 
 Adafruit_BME280 bme;
 WiFiClient wifiClient;
@@ -17,22 +17,29 @@ PubSubClient mqttClient(wifiClient);
 
 bool sensorReady = false;
 
+// ======================================================
 // Fan state
+// ======================================================
+
 bool fanIsOn = false;
 bool fanAutoMode = false;
 float fanThreshold = DEFAULT_FAN_THRESHOLD_C;
 
+// ======================================================
 // Pump state
+// ======================================================
+
 bool pumpIsOn = false;
+bool pumpAutoMode = true;
 
-// Most relay modules are active LOW:
-// LOW  = relay ON
-// HIGH = relay OFF
-const bool PUMP_RELAY_ACTIVE_LOW = true;
+int soilMoistureThreshold = DEFAULT_SOIL_MOISTURE_THRESHOLD_PERCENT;
 
-// Safety: pump automatically turns OFF after 3 seconds
-const unsigned long PUMP_MAX_ON_TIME_MS = 3000;
 unsigned long pumpTurnedOnAt = 0;
+unsigned long lastAutomaticPumpRun = 0;
+
+// ======================================================
+// Timers
+// ======================================================
 
 unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
@@ -116,6 +123,28 @@ void updatePumpSafetyTimer() {
     }
 }
 
+void updatePumpAutomatic(int soilMoisturePercent) {
+    if (!pumpAutoMode) {
+        return;
+    }
+
+    if (pumpIsOn) {
+        return;
+    }
+
+    unsigned long now = millis();
+
+    if (lastAutomaticPumpRun > 0 && now - lastAutomaticPumpRun < PUMP_COOLDOWN_MS) {
+        return;
+    }
+
+    if (soilMoisturePercent < soilMoistureThreshold) {
+        Serial.println("Auto pump: soil moisture is too low. Turning pump ON.");
+        setPump(true);
+        lastAutomaticPumpRun = now;
+    }
+}
+
 // ======================================================
 // Soil moisture sensor
 // ======================================================
@@ -147,6 +176,13 @@ void printSoilMoistureDebug() {
 
     Serial.print(" | Soil moisture: ");
     Serial.print(soilPercent);
+    Serial.print("%");
+
+    Serial.print(" | Pump auto: ");
+    Serial.print(pumpAutoMode ? "ON" : "OFF");
+
+    Serial.print(" | Pump threshold: ");
+    Serial.print(soilMoistureThreshold);
     Serial.println("%");
 }
 
@@ -169,7 +205,7 @@ void handleFanCommand(String message) {
         return;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
@@ -223,7 +259,7 @@ void handlePumpCommand(String message) {
         return;
     }
 
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
@@ -232,7 +268,37 @@ void handlePumpCommand(String message) {
         return;
     }
 
-    const char* state = doc["state"] | "off";
+    const char* mode = doc["mode"] | "";
+    const char* state = doc["state"] | "";
+
+    if (strcmp(mode, "auto") == 0) {
+        pumpAutoMode = true;
+        soilMoistureThreshold = doc["threshold"] | soilMoistureThreshold;
+        soilMoistureThreshold = constrain(soilMoistureThreshold, 0, 100);
+
+        Serial.print("Pump mode: AUTO. Soil threshold: ");
+        Serial.print(soilMoistureThreshold);
+        Serial.println("%");
+
+        int soilRaw = readSoilMoistureRaw();
+        int soilPercent = convertSoilMoistureToPercent(soilRaw);
+        updatePumpAutomatic(soilPercent);
+
+        return;
+    }
+
+    if (strcmp(mode, "manual") == 0) {
+        pumpAutoMode = false;
+
+        if (strcmp(state, "on") == 0) {
+            setPump(true);
+        } else {
+            setPump(false);
+        }
+
+        Serial.println("Pump mode: MANUAL");
+        return;
+    }
 
     if (strcmp(state, "on") == 0) {
         setPump(true);
@@ -411,7 +477,7 @@ void reconnectMQTTIfNeeded() {
 bool initSensor() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
-    if (!bme.begin(BME280_ADDRESS)) {
+    if (!bme.begin(GREENHOUSE_BME280_ADDRESS)) {
         Serial.println("ERROR: BME280/BMP280 sensor not found!");
         Serial.println("Check address 0x76/0x77 and wiring.");
         return false;
@@ -450,13 +516,14 @@ void publishSensorData() {
     int soilPercent = convertSoilMoistureToPercent(soilRaw);
 
     updateFanAutomatic(temperature);
+    updatePumpAutomatic(soilPercent);
 
-    char mqttPayload[700];
+    char mqttPayload[800];
 
     snprintf(
         mqttPayload,
         sizeof(mqttPayload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f,\"pumpOn\":%s}",
+        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f,\"pumpOn\":%s,\"pumpAutoMode\":%s,\"soilMoistureThreshold\":%d}",
         DEVICE_ID,
         temperature,
         humidity,
@@ -467,7 +534,9 @@ void publishSensorData() {
         fanIsOn ? "true" : "false",
         fanAutoMode ? "true" : "false",
         fanThreshold,
-        pumpIsOn ? "true" : "false"
+        pumpIsOn ? "true" : "false",
+        pumpAutoMode ? "true" : "false",
+        soilMoistureThreshold
     );
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
@@ -505,12 +574,19 @@ void publishSensorData() {
     Serial.print("Fan mode:    ");
     Serial.println(fanAutoMode ? "AUTO" : "MANUAL");
 
-    Serial.print("Threshold:   ");
+    Serial.print("Fan threshold: ");
     Serial.print(fanThreshold);
     Serial.println(" °C");
 
     Serial.print("Pump:        ");
     Serial.println(pumpIsOn ? "ON" : "OFF");
+
+    Serial.print("Pump mode:   ");
+    Serial.println(pumpAutoMode ? "AUTO" : "MANUAL");
+
+    Serial.print("Soil threshold: ");
+    Serial.print(soilMoistureThreshold);
+    Serial.println(" %");
 
     Serial.print("MQTT payload: ");
     Serial.println(mqttPayload);
@@ -532,7 +608,6 @@ void setup() {
 
     pinMode(SOIL_MOISTURE_PIN, INPUT);
 
-    // ESP32 ADC is 12-bit: analogRead() returns 0-4095
     analogReadResolution(12);
 
     Serial.println();
@@ -551,11 +626,15 @@ void setup() {
     Serial.print("Pump relay pin: GPIO ");
     Serial.println(WATER_PUMP_RELAY_PIN);
 
+    Serial.print("Default soil threshold: ");
+    Serial.print(soilMoistureThreshold);
+    Serial.println("%");
+
     WiFi.onEvent(onWiFiEvent);
     connectWiFi();
 
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setBufferSize(700);
+    mqttClient.setBufferSize(800);
     mqttClient.setCallback(mqttCallback);
 
     connectMQTT();
