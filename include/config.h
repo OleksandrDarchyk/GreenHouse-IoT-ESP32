@@ -81,6 +81,27 @@ const float DEFAULT_FAN_THRESHOLD_C = 27.0;
 const float FAN_HYSTERESIS_C = 1.0;
 
 // ======================================================
+// Pump relay settings
+// ======================================================
+
+// Most relay modules are active LOW:
+// LOW  = relay ON
+// HIGH = relay OFF
+const bool PUMP_RELAY_ACTIVE_LOW = true;
+
+// Default automatic pump control.
+// If soil moisture is lower than this value, pump can start automatically.
+const int DEFAULT_SOIL_MOISTURE_THRESHOLD_PERCENT = 30;
+
+// Pump safety timer.
+// Pump will automatically turn OFF after this time.
+const unsigned long PUMP_MAX_ON_TIME_MS = 3000;
+
+// Pump cooldown.
+// After automatic watering, wait this time before pump can start automatically again.
+const unsigned long PUMP_COOLDOWN_MS = 60000;
+
+// ======================================================
 // Timing
 // ======================================================
 
