@@ -245,6 +245,20 @@ void handleFanCommand(String message) {
         return;
     }
 
+    const char* state = doc["state"] | "";
+
+    if (strcmp(state, "on") == 0) {
+        fanAutoMode = false;
+        setFan(true);
+        return;
+    }
+
+    if (strcmp(state, "off") == 0) {
+        fanAutoMode = false;
+        setFan(false);
+        return;
+    }
+
     Serial.println("Unknown fan command.");
 }
 
