@@ -5,17 +5,50 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <ArduinoJson.h>
+#include <cstring>
+
 #include "config.h"
 #include "secrets.h"
 
+// ======================================================
+// BME280 settings
+// ======================================================
+
 const uint8_t GREENHOUSE_BME280_ADDRESS = 0x76;
 const float SEALEVELPRESSURE_HPA = 1013.25;
+
+// ======================================================
+// Global objects
+// ======================================================
 
 Adafruit_BME280 bme;
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 bool sensorReady = false;
+
+// ======================================================
+// Helper functions
+// ======================================================
+
+const char* toOnOff(bool isOn) {
+    return isOn ? "ON" : "OFF";
+}
+
+const char* toMode(bool isAutoMode) {
+    return isAutoMode ? "AUTO" : "MANUAL";
+}
+
+bool canPublishMqtt() {
+    return WiFi.status() == WL_CONNECTED && mqttClient.connected();
+}
+
+// ======================================================
+// Forward declarations
+// ======================================================
+
+void publishSensorData();
+void publishActuatorStatus(const char* reason);
 
 // ======================================================
 // Fan state
@@ -31,7 +64,6 @@ float fanThreshold = DEFAULT_FAN_THRESHOLD_C;
 
 bool pumpIsOn = false;
 bool pumpAutoMode = true;
-
 int soilMoistureThreshold = DEFAULT_SOIL_MOISTURE_THRESHOLD_PERCENT;
 
 unsigned long pumpTurnedOnAt = 0;
@@ -45,6 +77,52 @@ unsigned long lastSensorRead = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 unsigned long lastMqttReconnectAttempt = 0;
 unsigned long lastDebugPrint = 0;
+
+// ======================================================
+// Publish actuator/device status
+// This goes to MQTT_TOPIC_DEVICE_STATUS
+// ======================================================
+
+void publishActuatorStatus(const char* reason) {
+    if (!canPublishMqtt()) {
+        Serial.println("MQTT not connected. Skipping actuator status publish.");
+        return;
+    }
+
+    StaticJsonDocument<700> doc;
+
+    doc["deviceId"] = DEVICE_ID;
+    doc["online"] = true;
+    doc["status"] = "ONLINE";
+    doc["reason"] = reason;
+
+    doc["fanOn"] = fanIsOn;
+    doc["fanState"] = toOnOff(fanIsOn);
+    doc["fanAutoMode"] = fanAutoMode;
+    doc["fanMode"] = toMode(fanAutoMode);
+    doc["fanThreshold"] = fanThreshold;
+
+    doc["pumpOn"] = pumpIsOn;
+    doc["pumpState"] = toOnOff(pumpIsOn);
+    doc["pumpAutoMode"] = pumpAutoMode;
+    doc["pumpMode"] = toMode(pumpAutoMode);
+    doc["soilMoistureThreshold"] = soilMoistureThreshold;
+
+    char mqttPayload[700];
+    serializeJson(doc, mqttPayload, sizeof(mqttPayload));
+
+    bool success = mqttClient.publish(
+        MQTT_TOPIC_DEVICE_STATUS,
+        mqttPayload,
+        true
+    );
+
+    Serial.print("Device status payload: ");
+    Serial.println(mqttPayload);
+
+    Serial.print("Device status publish: ");
+    Serial.println(success ? "success" : "failed");
+}
 
 // ======================================================
 // Fan relay control
@@ -76,11 +154,13 @@ void updateFanAutomatic(float temperature) {
     if (!fanIsOn && temperature >= fanThreshold) {
         Serial.println("Auto fan: temperature is high. Turning fan ON.");
         setFan(true);
+        publishActuatorStatus("fan-auto-on");
     }
 
     if (fanIsOn && temperature <= fanThreshold - FAN_HYSTERESIS_C) {
         Serial.println("Auto fan: temperature is low enough. Turning fan OFF.");
         setFan(false);
+        publishActuatorStatus("fan-auto-off");
     }
 }
 
@@ -120,6 +200,7 @@ void updatePumpSafetyTimer() {
     if (now - pumpTurnedOnAt >= PUMP_MAX_ON_TIME_MS) {
         Serial.println("Pump safety timer: turning pump OFF.");
         setPump(false);
+        publishActuatorStatus("pump-safety-off");
     }
 }
 
@@ -141,6 +222,7 @@ void updatePumpAutomatic(int soilMoisturePercent) {
     if (soilMoisturePercent < soilMoistureThreshold) {
         Serial.println("Auto pump: soil moisture is too low. Turning pump ON.");
         setPump(true);
+        publishActuatorStatus("pump-auto-on");
         lastAutomaticPumpRun = now;
     }
 }
@@ -178,8 +260,17 @@ void printSoilMoistureDebug() {
     Serial.print(soilPercent);
     Serial.print("%");
 
-    Serial.print(" | Pump auto: ");
-    Serial.print(pumpAutoMode ? "ON" : "OFF");
+    Serial.print(" | Pump state: ");
+    Serial.print(toOnOff(pumpIsOn));
+
+    Serial.print(" | Pump mode: ");
+    Serial.print(toMode(pumpAutoMode));
+
+    Serial.print(" | Fan state: ");
+    Serial.print(toOnOff(fanIsOn));
+
+    Serial.print(" | Fan mode: ");
+    Serial.print(toMode(fanAutoMode));
 
     Serial.print(" | Pump threshold: ");
     Serial.print(soilMoistureThreshold);
@@ -187,10 +278,12 @@ void printSoilMoistureDebug() {
 }
 
 // ======================================================
-// MQTT command handler
+// MQTT command handlers
 // ======================================================
 
 void handleFanCommand(String message) {
+    message.trim();
+
     if (message == "on") {
         fanAutoMode = false;
         setFan(true);
@@ -205,7 +298,7 @@ void handleFanCommand(String message) {
         return;
     }
 
-    JsonDocument doc;
+    StaticJsonDocument<300> doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
@@ -215,6 +308,7 @@ void handleFanCommand(String message) {
     }
 
     const char* mode = doc["mode"] | "";
+    const char* state = doc["state"] | "";
 
     if (strcmp(mode, "auto") == 0) {
         fanAutoMode = true;
@@ -224,7 +318,8 @@ void handleFanCommand(String message) {
         Serial.println(fanThreshold);
 
         if (sensorReady) {
-            updateFanAutomatic(bme.readTemperature());
+            float temperature = bme.readTemperature();
+            updateFanAutomatic(temperature);
         }
 
         return;
@@ -232,8 +327,6 @@ void handleFanCommand(String message) {
 
     if (strcmp(mode, "manual") == 0) {
         fanAutoMode = false;
-
-        const char* state = doc["state"] | "off";
 
         if (strcmp(state, "on") == 0) {
             setFan(true);
@@ -245,17 +338,17 @@ void handleFanCommand(String message) {
         return;
     }
 
-    const char* state = doc["state"] | "";
-
     if (strcmp(state, "on") == 0) {
         fanAutoMode = false;
         setFan(true);
+        Serial.println("Fan mode: MANUAL");
         return;
     }
 
     if (strcmp(state, "off") == 0) {
         fanAutoMode = false;
         setFan(false);
+        Serial.println("Fan mode: MANUAL");
         return;
     }
 
@@ -263,17 +356,23 @@ void handleFanCommand(String message) {
 }
 
 void handlePumpCommand(String message) {
+    message.trim();
+
     if (message == "on") {
+        pumpAutoMode = false;
         setPump(true);
+        Serial.println("Pump mode: MANUAL");
         return;
     }
 
     if (message == "off") {
+        pumpAutoMode = false;
         setPump(false);
+        Serial.println("Pump mode: MANUAL");
         return;
     }
 
-    JsonDocument doc;
+    StaticJsonDocument<300> doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
@@ -287,6 +386,7 @@ void handlePumpCommand(String message) {
 
     if (strcmp(mode, "auto") == 0) {
         pumpAutoMode = true;
+
         soilMoistureThreshold = doc["threshold"] | soilMoistureThreshold;
         soilMoistureThreshold = constrain(soilMoistureThreshold, 0, 100);
 
@@ -315,17 +415,25 @@ void handlePumpCommand(String message) {
     }
 
     if (strcmp(state, "on") == 0) {
+        pumpAutoMode = false;
         setPump(true);
+        Serial.println("Pump mode: MANUAL");
         return;
     }
 
     if (strcmp(state, "off") == 0) {
+        pumpAutoMode = false;
         setPump(false);
+        Serial.println("Pump mode: MANUAL");
         return;
     }
 
     Serial.println("Unknown pump command.");
 }
+
+// ======================================================
+// MQTT callback
+// ======================================================
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String message = "";
@@ -345,11 +453,15 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
     if (String(topic) == MQTT_TOPIC_FAN_COMMAND) {
         handleFanCommand(message);
+        publishActuatorStatus("fan-command");
+        publishSensorData();
         return;
     }
 
     if (String(topic) == MQTT_TOPIC_PUMP_COMMAND) {
         handlePumpCommand(message);
+        publishActuatorStatus("pump-command");
+        publishSensorData();
         return;
     }
 
@@ -444,10 +556,18 @@ bool connectMQTT() {
     String clientId = "greenhouse-esp32-";
     clientId += String((uint32_t)ESP.getEfuseMac(), HEX);
 
+    String offlinePayload = "{\"deviceId\":\"";
+    offlinePayload += DEVICE_ID;
+    offlinePayload += "\",\"online\":false,\"status\":\"OFFLINE\"}";
+
     bool connected = mqttClient.connect(
         clientId.c_str(),
         MQTT_TOKEN,
-        ""
+        "",
+        MQTT_TOPIC_DEVICE_STATUS,
+        1,
+        true,
+        offlinePayload.c_str()
     );
 
     if (connected) {
@@ -461,6 +581,8 @@ bool connectMQTT() {
 
         Serial.print("Subscribed to pump command topic: ");
         Serial.println(MQTT_TOPIC_PUMP_COMMAND);
+
+        publishActuatorStatus("mqtt-connected");
 
         return true;
     }
@@ -497,12 +619,13 @@ bool initSensor() {
         return false;
     }
 
-    Serial.println("Sensor initialized successfully!");
+    Serial.println("BME280/BMP280 sensor initialized successfully!");
     return true;
 }
 
 // ======================================================
 // Publish sensor data
+// This goes to MQTT_TOPIC_SENSOR_DATA
 // ======================================================
 
 void publishSensorData() {
@@ -532,26 +655,33 @@ void publishSensorData() {
     updateFanAutomatic(temperature);
     updatePumpAutomatic(soilPercent);
 
-    char mqttPayload[800];
+    StaticJsonDocument<1000> doc;
 
-    snprintf(
-        mqttPayload,
-        sizeof(mqttPayload),
-        "{\"deviceId\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"soilMoistureRaw\":%d,\"soilMoisture\":%d,\"fanOn\":%s,\"fanAutoMode\":%s,\"fanThreshold\":%.2f,\"pumpOn\":%s,\"pumpAutoMode\":%s,\"soilMoistureThreshold\":%d}",
-        DEVICE_ID,
-        temperature,
-        humidity,
-        pressure,
-        altitude,
-        soilRaw,
-        soilPercent,
-        fanIsOn ? "true" : "false",
-        fanAutoMode ? "true" : "false",
-        fanThreshold,
-        pumpIsOn ? "true" : "false",
-        pumpAutoMode ? "true" : "false",
-        soilMoistureThreshold
-    );
+    doc["deviceId"] = DEVICE_ID;
+    doc["online"] = true;
+
+    doc["temperature"] = temperature;
+    doc["humidity"] = humidity;
+    doc["pressure"] = pressure;
+    doc["altitude"] = altitude;
+
+    doc["soilMoistureRaw"] = soilRaw;
+    doc["soilMoisture"] = soilPercent;
+
+    doc["fanOn"] = fanIsOn;
+    doc["fanState"] = toOnOff(fanIsOn);
+    doc["fanAutoMode"] = fanAutoMode;
+    doc["fanMode"] = toMode(fanAutoMode);
+    doc["fanThreshold"] = fanThreshold;
+
+    doc["pumpOn"] = pumpIsOn;
+    doc["pumpState"] = toOnOff(pumpIsOn);
+    doc["pumpAutoMode"] = pumpAutoMode;
+    doc["pumpMode"] = toMode(pumpAutoMode);
+    doc["soilMoistureThreshold"] = soilMoistureThreshold;
+
+    char mqttPayload[1000];
+    serializeJson(doc, mqttPayload, sizeof(mqttPayload));
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
 
@@ -563,39 +693,39 @@ void publishSensorData() {
     Serial.print(temperature);
     Serial.println(" °C");
 
-    Serial.print("Humidity:    ");
+    Serial.print("Humidity: ");
     Serial.print(humidity);
     Serial.println(" %");
 
-    Serial.print("Pressure:    ");
+    Serial.print("Pressure: ");
     Serial.print(pressure);
     Serial.println(" hPa");
 
-    Serial.print("Altitude:    ");
+    Serial.print("Altitude: ");
     Serial.print(altitude);
     Serial.println(" m");
 
-    Serial.print("Soil raw:    ");
+    Serial.print("Soil raw: ");
     Serial.println(soilRaw);
 
-    Serial.print("Soil:        ");
+    Serial.print("Soil moisture: ");
     Serial.print(soilPercent);
     Serial.println(" %");
 
-    Serial.print("Fan:         ");
+    Serial.print("Fan: ");
     Serial.println(fanIsOn ? "ON" : "OFF");
 
-    Serial.print("Fan mode:    ");
+    Serial.print("Fan mode: ");
     Serial.println(fanAutoMode ? "AUTO" : "MANUAL");
 
     Serial.print("Fan threshold: ");
     Serial.print(fanThreshold);
     Serial.println(" °C");
 
-    Serial.print("Pump:        ");
+    Serial.print("Pump: ");
     Serial.println(pumpIsOn ? "ON" : "OFF");
 
-    Serial.print("Pump mode:   ");
+    Serial.print("Pump mode: ");
     Serial.println(pumpAutoMode ? "AUTO" : "MANUAL");
 
     Serial.print("Soil threshold: ");
@@ -648,12 +778,14 @@ void setup() {
     connectWiFi();
 
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setBufferSize(800);
+    mqttClient.setBufferSize(1000);
     mqttClient.setCallback(mqttCallback);
 
     connectMQTT();
 
     sensorReady = initSensor();
+
+    publishActuatorStatus("setup-finished");
 }
 
 // ======================================================
