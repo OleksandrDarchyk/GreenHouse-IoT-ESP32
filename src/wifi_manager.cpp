@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include "config.h"
 #include "secrets.h"
 
 // ======================================================
@@ -76,7 +77,7 @@ void reconnectWiFiIfNeeded() {
 
     unsigned long now = millis();
 
-    if (now - lastWifiReconnectAttempt >= 5000) {
+    if (now - lastWifiReconnectAttempt >= WIFI_RECONNECT_INTERVAL_MS) {
         lastWifiReconnectAttempt = now;
         Serial.println("Reconnecting to WiFi...");
         WiFi.reconnect();

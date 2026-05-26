@@ -61,7 +61,7 @@ void publishActuatorStatus(const char* reason) {
     doc["pumpMode"] = toMode(isPumpAutoMode());
     doc["soilMoistureThreshold"] = getSoilMoistureThreshold();
 
-    char mqttPayload[700];
+    char mqttPayload[MQTT_STATUS_PAYLOAD_BUFFER_SIZE];
     serializeJson(doc, mqttPayload, sizeof(mqttPayload));
 
     bool success = mqttClient.publish(
@@ -251,7 +251,7 @@ void publishSensorData() {
     doc["pumpMode"] = toMode(isPumpAutoMode());
     doc["soilMoistureThreshold"] = getSoilMoistureThreshold();
 
-    char mqttPayload[1000];
+    char mqttPayload[MQTT_SENSOR_PAYLOAD_BUFFER_SIZE];
     serializeJson(doc, mqttPayload, sizeof(mqttPayload));
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
