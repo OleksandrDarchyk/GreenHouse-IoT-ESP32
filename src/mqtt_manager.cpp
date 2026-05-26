@@ -120,7 +120,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
 void setupMqttClient() {
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setBufferSize(1000);
+    mqttClient.setBufferSize(MQTT_CLIENT_BUFFER_SIZE);
     mqttClient.setCallback(mqttCallback);
 }
 
@@ -184,7 +184,7 @@ void reconnectMQTTIfNeeded() {
 
     unsigned long now = millis();
 
-    if (now - lastMqttReconnectAttempt >= 5000) {
+    if (now - lastMqttReconnectAttempt >= MQTT_RECONNECT_INTERVAL_MS) {
         lastMqttReconnectAttempt = now;
         connectMQTT();
     }
