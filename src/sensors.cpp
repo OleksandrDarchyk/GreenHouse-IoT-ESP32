@@ -49,15 +49,53 @@ int convertSoilMoistureToPercent(int rawValue) {
     return (int)percentage;
 }
 
+// ======================================================
+// LDR light sensor
+// ======================================================
+
+void setupLightSensor() {
+    pinMode(LDR_PIN, INPUT);
+    analogReadResolution(12);
+}
+
+int readLightRaw() {
+    return analogRead(LDR_PIN);
+}
+
+int convertLightToPercent(int rawValue) {
+    // ESP32 ADC range: 0-4095.
+    // With your current LDR voltage divider:
+    // more light should usually give a higher raw value.
+    long percentage = map(rawValue, 0, 4095, 0, 100);
+
+    percentage = constrain(percentage, 0L, 100L);
+
+    return (int)percentage;
+}
+
+// ======================================================
+// Debug print
+// ======================================================
+
 void printSoilMoistureDebug() {
     int soilRaw = readSoilMoistureRaw();
     int soilPercent = convertSoilMoistureToPercent(soilRaw);
+
+    int lightRaw = readLightRaw();
+    int lightPercent = convertLightToPercent(lightRaw);
 
     Serial.print("Soil raw: ");
     Serial.print(soilRaw);
 
     Serial.print(" | Soil moisture: ");
     Serial.print(soilPercent);
+    Serial.print("%");
+
+    Serial.print(" | Light raw: ");
+    Serial.print(lightRaw);
+
+    Serial.print(" | Light: ");
+    Serial.print(lightPercent);
     Serial.print("%");
 
     Serial.print(" | Pump state: ");
@@ -118,6 +156,9 @@ SensorData readSensorData() {
 
     data.soilRaw = readSoilMoistureRaw();
     data.soilMoisturePercent = convertSoilMoistureToPercent(data.soilRaw);
+
+    data.lightRaw = readLightRaw();
+    data.lightPercent = convertLightToPercent(data.lightRaw);
 
     return data;
 }

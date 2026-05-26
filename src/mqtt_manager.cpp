@@ -42,7 +42,7 @@ void publishActuatorStatus(const char* reason) {
         return;
     }
 
-    StaticJsonDocument<700> doc;
+    JsonDocument doc;
 
     doc["deviceId"] = DEVICE_ID;
     doc["online"] = true;
@@ -220,7 +220,7 @@ void publishSensorData() {
     updateFanAutomatic(data.temperature);
     updatePumpAutomatic(data.soilMoisturePercent);
 
-    StaticJsonDocument<1000> doc;
+    JsonDocument doc;
 
     doc["deviceId"] = DEVICE_ID;
     doc["online"] = true;
@@ -232,6 +232,12 @@ void publishSensorData() {
 
     doc["soilMoistureRaw"] = data.soilRaw;
     doc["soilMoisture"] = data.soilMoisturePercent;
+
+    // LDR light sensor
+    // lightRaw = raw ADC value from GPIO35, 0-4095
+    // lightLevel = simple percentage, 0-100
+    doc["lightRaw"] = data.lightRaw;
+    doc["lightLevel"] = data.lightPercent;
 
     doc["fanOn"] = isFanOn();
     doc["fanState"] = toOnOff(isFanOn());
@@ -275,6 +281,13 @@ void publishSensorData() {
 
     Serial.print("Soil moisture: ");
     Serial.print(data.soilMoisturePercent);
+    Serial.println(" %");
+
+    Serial.print("Light raw: ");
+    Serial.println(data.lightRaw);
+
+    Serial.print("Light level: ");
+    Serial.print(data.lightPercent);
     Serial.println(" %");
 
     Serial.print("Fan: ");

@@ -23,16 +23,20 @@ void setup() {
 
     setupActuators();
     setupSoilMoistureSensor();
+    setupLightSensor();
 
     Serial.println();
-    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan + Pump + Soil Moisture");
-    Serial.println("============================================================");
+    Serial.println("GreenHouse IoT - BME280 + MQTT + Fan + Pump + Soil Moisture + Light");
+    Serial.println("====================================================================");
 
     Serial.print("Device ID: ");
     Serial.println(DEVICE_ID);
 
     Serial.print("Soil moisture pin: GPIO ");
     Serial.println(SOIL_MOISTURE_PIN);
+
+    Serial.print("Light sensor pin: GPIO ");
+    Serial.println(LDR_PIN);
 
     Serial.print("Fan relay pin: GPIO ");
     Serial.println(FAN_RELAY_PIN);
