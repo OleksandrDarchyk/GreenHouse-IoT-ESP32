@@ -196,7 +196,7 @@ void handleFanCommand(String message) {
         return;
     }
 
-    StaticJsonDocument<300> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
@@ -270,7 +270,7 @@ void handlePumpCommand(String message) {
         return;
     }
 
-    StaticJsonDocument<300> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
 
     if (error) {
