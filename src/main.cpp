@@ -18,8 +18,8 @@ unsigned long lastDebugPrint = 0;
 // ======================================================
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
+    Serial.begin(SERIAL_BAUD_RATE);
+    delay(STARTUP_DELAY_MS);
 
     setupActuators();
     setupSoilMoistureSensor();

@@ -36,12 +36,11 @@ static constexpr int I2C_SCL_PIN = 22;
 // ======================================================
 // Analog sensor pins
 // ADC1 pins work while WiFi is active.
-// GPIO 34, 35, 36, 39 are input-only pins.
+// GPIO 34, 35 are input-only pins.
 // ======================================================
 
 static constexpr int SOIL_MOISTURE_PIN = 34;
 static constexpr int LDR_PIN = 35;
-static constexpr int MQ135_PIN = 36;
 
 // ======================================================
 // Soil moisture calibration
@@ -102,11 +101,41 @@ static constexpr unsigned long PUMP_MAX_ON_TIME_MS = 3000;
 static constexpr unsigned long PUMP_COOLDOWN_MS = 60000;
 
 // ======================================================
+// System settings
+// ======================================================
+
+static constexpr unsigned long SERIAL_BAUD_RATE = 115200;
+static constexpr unsigned long STARTUP_DELAY_MS = 1000;
+
+// ======================================================
+// ADC settings
+// ESP32 ADC is 12-bit: 0-4095
+// ======================================================
+
+static constexpr int ADC_RESOLUTION_BITS = 12;
+static constexpr int ADC_MAX_VALUE = 4095;
+
+// ======================================================
 // Timing
 // ======================================================
 
 static constexpr unsigned long SENSOR_READ_INTERVAL_MS = 5000;
 static constexpr unsigned long DEBUG_PRINT_INTERVAL_MS = 2000;
+
+// ======================================================
+// Reconnect settings
+// ======================================================
+
+static constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 5000;
+static constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 5000;
+
+// ======================================================
+// MQTT buffer settings
+// ======================================================
+
+static constexpr int MQTT_CLIENT_BUFFER_SIZE = 1000;
+static constexpr int MQTT_STATUS_PAYLOAD_BUFFER_SIZE = 700;
+static constexpr int MQTT_SENSOR_PAYLOAD_BUFFER_SIZE = 1000;
 
 // ======================================================
 // MQTT settings
