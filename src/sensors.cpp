@@ -147,12 +147,21 @@ float readTemperature() {
 }
 
 SensorData readSensorData() {
-    SensorData data;
+    SensorData data = {};
 
-    data.temperature = bme.readTemperature();
-    data.humidity = bme.readHumidity();
-    data.pressure = bme.readPressure() / 100.0;
-    data.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    if (sensorReady) {
+        data.temperature = bme.readTemperature();
+        data.humidity = bme.readHumidity();
+        data.pressure = bme.readPressure() / 100.0;
+        data.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    } else {
+        data.temperature = NAN;
+        data.humidity = NAN;
+        data.pressure = NAN;
+        data.altitude = NAN;
+
+        Serial.println("BME280 is not ready. BME280 values are invalid.");
+    }
 
     data.soilRaw = readSoilMoistureRaw();
     data.soilMoisturePercent = convertSoilMoistureToPercent(data.soilRaw);

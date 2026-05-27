@@ -16,7 +16,7 @@
 // Device information
 // ======================================================
 
-static constexpr const char* DEVICE_ID = "greenhouse-esp32-01";
+static constexpr const char* DEVICE_ID = "esp32-01";
 
 // ======================================================
 // Built-in board components
