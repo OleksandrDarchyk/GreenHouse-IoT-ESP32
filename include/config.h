@@ -19,13 +19,6 @@
 static constexpr const char* DEVICE_ID = "esp32-01";
 
 // ======================================================
-// Built-in board components
-// ======================================================
-
-static constexpr int ONBOARD_LED_PIN = 2;
-static constexpr int ONBOARD_BUTTON_PIN = 27;
-
-// ======================================================
 // I2C pins
 // Used for BME280 sensor
 // ======================================================

@@ -70,8 +70,8 @@ void publishActuatorStatus(const char* reason) {
         true
     );
 
-    Serial.print("Device status payload: ");
-    Serial.println(mqttPayload);
+    // Serial.print("Device status payload: ");
+    // Serial.println(mqttPayload);
 
     Serial.print("Device status publish: ");
     Serial.println(success ? "success" : "failed");
@@ -310,8 +310,8 @@ void publishSensorData() {
     Serial.print(getSoilMoistureThreshold());
     Serial.println(" %");
 
-    Serial.print("MQTT payload: ");
-    Serial.println(mqttPayload);
+    // Serial.print("MQTT payload: ");
+    // Serial.println(mqttPayload);
 
     Serial.print("Publish status: ");
     Serial.println(success ? "success" : "failed");
