@@ -28,7 +28,7 @@ bool sensorReady = false;
 
 void setupSoilMoistureSensor() {
     pinMode(SOIL_MOISTURE_PIN, INPUT);
-    analogReadResolution(12);
+    analogReadResolution(ADC_RESOLUTION_BITS);
 }
 
 int readSoilMoistureRaw() {
@@ -55,7 +55,7 @@ int convertSoilMoistureToPercent(int rawValue) {
 
 void setupLightSensor() {
     pinMode(LDR_PIN, INPUT);
-    analogReadResolution(12);
+    analogReadResolution(ADC_RESOLUTION_BITS);
 }
 
 int readLightRaw() {
@@ -66,7 +66,7 @@ int convertLightToPercent(int rawValue) {
     // ESP32 ADC range: 0-4095.
     // With your current LDR voltage divider:
     // more light should usually give a higher raw value.
-    long percentage = map(rawValue, 0, 4095, 0, 100);
+    long percentage = map(rawValue, 0, ADC_MAX_VALUE, 0, 100);
 
     percentage = constrain(percentage, 0L, 100L);
 

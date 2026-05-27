@@ -61,7 +61,7 @@ void publishActuatorStatus(const char* reason) {
     doc["pumpMode"] = toMode(isPumpAutoMode());
     doc["soilMoistureThreshold"] = getSoilMoistureThreshold();
 
-    char mqttPayload[700];
+    char mqttPayload[MQTT_STATUS_PAYLOAD_BUFFER_SIZE];
     serializeJson(doc, mqttPayload, sizeof(mqttPayload));
 
     bool success = mqttClient.publish(
@@ -120,7 +120,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
 void setupMqttClient() {
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setBufferSize(1000);
+    mqttClient.setBufferSize(MQTT_CLIENT_BUFFER_SIZE);
     mqttClient.setCallback(mqttCallback);
 }
 
@@ -184,7 +184,7 @@ void reconnectMQTTIfNeeded() {
 
     unsigned long now = millis();
 
-    if (now - lastMqttReconnectAttempt >= 5000) {
+    if (now - lastMqttReconnectAttempt >= MQTT_RECONNECT_INTERVAL_MS) {
         lastMqttReconnectAttempt = now;
         connectMQTT();
     }
@@ -251,7 +251,7 @@ void publishSensorData() {
     doc["pumpMode"] = toMode(isPumpAutoMode());
     doc["soilMoistureThreshold"] = getSoilMoistureThreshold();
 
-    char mqttPayload[1000];
+    char mqttPayload[MQTT_SENSOR_PAYLOAD_BUFFER_SIZE];
     serializeJson(doc, mqttPayload, sizeof(mqttPayload));
 
     bool success = mqttClient.publish(MQTT_TOPIC_SENSOR_DATA, mqttPayload);
