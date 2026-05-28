@@ -64,8 +64,7 @@ int readLightRaw() {
 
 int convertLightToPercent(int rawValue) {
     // ESP32 ADC range: 0-4095.
-    // With your current LDR voltage divider:
-    // more light should usually give a higher raw value.
+    // more light  give a higher raw value.
     long percentage = map(rawValue, 0, ADC_MAX_VALUE, 0, 100);
 
     percentage = constrain(percentage, 0L, 100L);
@@ -147,12 +146,21 @@ float readTemperature() {
 }
 
 SensorData readSensorData() {
-    SensorData data;
+    SensorData data = {};
 
-    data.temperature = bme.readTemperature();
-    data.humidity = bme.readHumidity();
-    data.pressure = bme.readPressure() / 100.0;
-    data.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    if (sensorReady) {
+        data.temperature = bme.readTemperature();
+        data.humidity = bme.readHumidity();
+        data.pressure = bme.readPressure() / 100.0;
+        data.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    } else {
+        data.temperature = NAN;
+        data.humidity = NAN;
+        data.pressure = NAN;
+        data.altitude = NAN;
+
+        Serial.println("BME280 is not ready. BME280 values are invalid.");
+    }
 
     data.soilRaw = readSoilMoistureRaw();
     data.soilMoisturePercent = convertSoilMoistureToPercent(data.soilRaw);

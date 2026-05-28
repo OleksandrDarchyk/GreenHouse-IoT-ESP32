@@ -70,8 +70,8 @@ void publishActuatorStatus(const char* reason) {
         true
     );
 
-    Serial.print("Device status payload: ");
-    Serial.println(mqttPayload);
+    // Serial.print("Device status payload: ");
+    // Serial.println(mqttPayload);
 
     Serial.print("Device status publish: ");
     Serial.println(success ? "success" : "failed");
@@ -233,9 +233,6 @@ void publishSensorData() {
     doc["soilMoistureRaw"] = data.soilRaw;
     doc["soilMoisture"] = data.soilMoisturePercent;
 
-    // LDR light sensor
-    // lightRaw = raw ADC value from GPIO35, 0-4095
-    // lightLevel = simple percentage, 0-100
     doc["lightRaw"] = data.lightRaw;
     doc["lightLevel"] = data.lightPercent;
 
@@ -310,8 +307,8 @@ void publishSensorData() {
     Serial.print(getSoilMoistureThreshold());
     Serial.println(" %");
 
-    Serial.print("MQTT payload: ");
-    Serial.println(mqttPayload);
+    // Serial.print("MQTT payload: ");
+    // Serial.println(mqttPayload);
 
     Serial.print("Publish status: ");
     Serial.println(success ? "success" : "failed");
