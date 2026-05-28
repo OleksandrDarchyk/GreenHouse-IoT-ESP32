@@ -37,8 +37,7 @@ static constexpr int LDR_PIN = 35;
 
 // ======================================================
 // Soil moisture calibration
-// These values must be adjusted after testing your sensor.
-// Usually: higher value = dry, lower value = wet.
+// Calibrated for this sensor. Higher raw value = dry, lower = wet.
 // ======================================================
 
 static constexpr int SOIL_DRY_VALUE = 3000;
@@ -46,8 +45,8 @@ static constexpr int SOIL_WET_VALUE = 1400;
 
 // ======================================================
 // Digital output pins
-// Used for actuators through relay module or MOSFET.
-// Never connect pump or fan directly to ESP32 GPIO.
+// Relay control pins for pump and fan.
+// GPIO controls the relay signal only.
 // ======================================================
 
 static constexpr int WATER_PUMP_RELAY_PIN = 26;
@@ -57,7 +56,7 @@ static constexpr int FAN_RELAY_PIN = 25;
 // Fan relay settings
 // ======================================================
 
-// Your relay works as active LOW:
+// Relay module is active LOW:
 // LOW  = relay ON
 // HIGH = relay OFF
 static constexpr bool FAN_RELAY_ACTIVE_LOW = true;
@@ -76,7 +75,7 @@ static constexpr float FAN_HYSTERESIS_C = 1.0;
 // Pump relay settings
 // ======================================================
 
-// Most relay modules are active LOW:
+// Relay module is active LOW:
 // LOW  = relay ON
 // HIGH = relay OFF
 static constexpr bool PUMP_RELAY_ACTIVE_LOW = true;

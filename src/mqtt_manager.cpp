@@ -233,9 +233,6 @@ void publishSensorData() {
     doc["soilMoistureRaw"] = data.soilRaw;
     doc["soilMoisture"] = data.soilMoisturePercent;
 
-    // LDR light sensor
-    // lightRaw = raw ADC value from GPIO35, 0-4095
-    // lightLevel = simple percentage, 0-100
     doc["lightRaw"] = data.lightRaw;
     doc["lightLevel"] = data.lightPercent;
 
